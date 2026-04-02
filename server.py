@@ -1,10 +1,11 @@
 import os
 from contextlib import asynccontextmanager
-from typing import Dict
+from typing import Dict, List
 
 import joblib
+import mysql.connector
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 
 def _get_model_dir():
@@ -33,6 +34,23 @@ app = FastAPI(lifespan=lifespan, root_path=os.getenv("TFY_SERVICE_ROOT_PATH", ""
 @app.get("/health")
 async def health() -> Dict[str, bool]:
     return {"healthy": True}
+
+
+@app.get("/databases")
+def show_databases() -> Dict[str, List[str]]:
+    host = os.environ["DB_HOST"]
+    user = os.environ["DB_USER"]
+    password = os.environ["DB_PASSWORD"]
+    try:
+        conn = mysql.connector.connect(host=host, user=user, password=password)
+        cursor = conn.cursor()
+        cursor.execute("SHOW DATABASES")
+        databases = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+    except mysql.connector.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"databases": databases}
 
 
 @app.post("/predict")
