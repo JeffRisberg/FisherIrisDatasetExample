@@ -3,10 +3,13 @@ from contextlib import asynccontextmanager
 from typing import Dict, List
 
 import joblib
-import mysql.connector
 import pandas as pd
-from fastapi import FastAPI, HTTPException
 
+import pymysql
+from fastapi import Body, FastAPI
+from pydantic import BaseModel, Field
+
+model = None
 
 def _get_model_dir():
     return os.getenv("MODEL_DIR", ".")
@@ -36,23 +39,6 @@ async def health() -> Dict[str, bool]:
     return {"healthy": True}
 
 
-@app.get("/databases")
-def show_databases() -> Dict[str, List[str]]:
-    host = os.environ["DB_HOST"]
-    user = os.environ["DB_USER"]
-    password = os.environ["DB_PASSWORD"]
-    try:
-        conn = mysql.connector.connect(host=host, user=user, password=password)
-        cursor = conn.cursor()
-        cursor.execute("SHOW DATABASES")
-        databases = [row[0] for row in cursor.fetchall()]
-        cursor.close()
-        conn.close()
-    except mysql.connector.Error as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"databases": databases}
-
-
 @app.post("/predict")
 def predict(sepal_length: float, sepal_width: float, petal_length: float, petal_width: float):
     global model
@@ -68,3 +54,27 @@ def predict(sepal_length: float, sepal_width: float, petal_length: float, petal_
     for label, confidence in zip(class_names, prediction):
         predictions.append({"label": label, "score": confidence})
     return {"predictions": predictions}
+
+
+@app.get("/checkdb")
+def checkdb():
+    db_user = os.getenv("DB_USER")
+    db_pass = os.getenv("DB_PASS")
+    db_host = os.getenv("DB_HOST")
+
+    if not all([db_user, db_pass, db_host]):
+        return {"status": "error", "message": "DB_USER, DB_PASS, or DB_HOST env variables not set"}
+
+    try:
+        connection = pymysql.connect(
+            host=db_host,
+            user=db_user,
+            password=db_pass,
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW DATABASES")
+            databases = [row[0] for row in cursor.fetchall()]
+        connection.close()
+        return {"status": "ok", "databases": databases}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
